@@ -7,7 +7,7 @@ param(
     [string]$ExtraOpts = '',
     [switch]$RowOpts,
     [string]$PrebuiltDir = '',
-    [ValidateSet('gfx1200','gfx1201')][string[]]$Targets = @('gfx1200','gfx1201')
+    [ValidateSet('gfx1200','gfx1201','gfx1103')][string[]]$Targets = @('gfx1200','gfx1201')
 )
 # Builds 31 modules per target (24 legacy, two opt-in wave-owned modules, two opt-in C512 32-token modules, one opt-in ViT
 # projection 64-column module). 2026-09-26: the mh_fast row now spells out HIP_FFN_LINE_STORES 1 -- prod7/prod8 were built
@@ -90,15 +90,21 @@ foreach($target in $Targets){
 $OutputDir=if($Targets.Count -gt 1){Join-Path $outputRoot $target}else{$outputRoot}
 New-Item -ItemType Directory -Force $OutputDir|Out-Null
 $manifest = @()
+# gfx1103 (RDNA3 780M): no FP8 cvt or WMMA ISA. Build the four reference modules that
+# compile as-is, plus multihead-tiled from the register-blocked RDNA3 port; skip the rest
+# (RuntimeOptions has() gates disable their opt-in consumers on the host).
+$rdna3Modules=@{ 'c32_prefix_reference'=1; 'multihead-reference'=1; 'deep_reference'=1; 'boundary_reference'=1; 'multihead-tiled'=1; 'c32_tiled'=1; 'multihead-fast'=1 }
 foreach ($m in $modules) {
     if ($Only -and $m.name -ne $Only) { continue }
+    if ($target -eq 'gfx1103' -and -not $rdna3Modules.ContainsKey($m.name)) { Write-Output ("gfx1103 skip {0} (no RDNA3 port)" -f $m.name); continue }
     $text = "#define HIP_ISA_HALF 1`n"
     if ($m.name -like '*-packed') { $text += "#define HIP_PREPACKED_WEIGHTS 1`n" }
     # an -ExtraDefines macro overrides the recipe's own value of the same macro
     $extraNames = @($ExtraDefines | ForEach-Object { ($_ -split '\s+')[0] })
     $recipe = @($m.defines | Where-Object { ($_ -split '\s+')[0] -notin $extraNames })
     foreach ($d in @($ExtraDefines)+$recipe) { $text += "#define $d`n" }
-    foreach ($part in $m.sources) {
+    $parts = if ($target -eq 'gfx1103' -and $m.name -eq 'multihead-tiled') { @('multihead_tiled_rdna3.hip') } elseif ($target -eq 'gfx1103' -and $m.name -eq 'c32_tiled') { @('c32_tiled_rdna3.hip') } elseif ($target -eq 'gfx1103' -and $m.name -eq 'multihead-fast') { @('rdna3_wmma_shim.h','multihead_fast_rdna3.hip') } else { $m.sources }
+    foreach ($part in $parts) {
         if ($part -eq '@swin-persistent-types') {
             $types=Join-Path $SourceDir 'swin_persistent_types.h'
             if(!(Test-Path $types)){$types=Join-Path $SourceDir '../Development/HIP/swin_persistent_types.h'}

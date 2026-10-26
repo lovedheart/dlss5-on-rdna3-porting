@@ -461,11 +461,11 @@ hip_reference::Options RuntimeOptions(unsigned w, unsigned h, const std::wstring
     auto opt = LmxxfProductionOptions(w, h, Utf8(modulesDir), Utf8(weightsDir));
     opt.small_geometry=NativeCurrentNetworkGeometry().small_model;
     opt.integration.allow_small_model = !NativeOutputTemporalMode(NativeSelectedTemporalMode());
-    // The bridge picks HIP\gfx1200 or HIP\gfx1201 by device when those folders exist; require the module in every
+    // The bridge picks HIP\gfx1200, HIP\gfx1201 or HIP\gfx1103 by device when those folders exist; require the module in every
     // architecture folder present (conservative: off rather than a load failure), else in the folder itself.
     auto has = [&](const wchar_t *f) {
         bool any = false;
-        for (const wchar_t *arch : {L"gfx1200", L"gfx1201"})
+        for (const wchar_t *arch : {L"gfx1200", L"gfx1201", L"gfx1103"})
         {
             const std::wstring sub = JoinPath(modulesDir, arch);
             if (!IsDirectory(sub))

@@ -218,9 +218,9 @@ public:
    if(chosen<0&&name_matches==1){chosen=name_match;device_match="name";}
    if(chosen<0)throw std::runtime_error(std::string("no HIP device matches D3D12 adapter '")+dname+"' (HIP devices: "+(seen.empty()?"none":seen)+")");options.device=unsigned(chosen);hip_device=chosen;auto props=probe.Properties(chosen);architecture=std::string(props.gcnArchName,strnlen(props.gcnArchName,sizeof props.gcnArchName));architecture=architecture.substr(0,architecture.find(':'));adapter_name=dname;
 probe.Check(probe.hipSetDevice(chosen),"select device");size_t total=0;if(probe.hipMemGetInfo(&free_at_create,&total))free_at_create=0;}
-  if(architecture!="gfx1200"&&architecture!="gfx1201")throw std::runtime_error("unsupported HIP architecture: "+architecture);
+  if(architecture!="gfx1200"&&architecture!="gfx1201"&&architecture!="gfx1103")throw std::runtime_error("unsupported HIP architecture: "+architecture);
   auto root=std::filesystem::u8path(options.modules);
-  if(std::filesystem::is_directory(root/"gfx1200")||std::filesystem::is_directory(root/"gfx1201")){
+  if(std::filesystem::is_directory(root/"gfx1200")||std::filesystem::is_directory(root/"gfx1201")||std::filesystem::is_directory(root/"gfx1103")){
    root/=architecture;if(!std::filesystem::is_directory(root))throw std::runtime_error("missing module architecture directory: "+architecture);
    options.modules=root.u8string();
   }
@@ -236,7 +236,7 @@ probe.Check(probe.hipSetDevice(chosen),"select device");size_t total=0;if(probe.
   if(const char*v=std::getenv("DLSS5_HIP_INPUT_POLL");options.integration.allow_input_poll&&v){if(strcmp(v,"0")&&strcmp(v,"1")&&strcmp(v,"2"))throw std::runtime_error("DLSS5_HIP_INPUT_POLL must be 0, 1 or 2");poll_inline=!strcmp(v,"2");if(strcmp(v,"0")){try{SetupPoll();}catch(const std::exception&e){poll=false;poll_off=true;fprintf(stderr,"hip_input_poll unavailable (%s); fence path\n",e.what());}}}
   // Performance scope fingerprint from the actual validated RX9070XT driver.
   // A missing/changed fingerprint falls back to old NN in auto mode.
-  const bool pulse_arch=architecture=="gfx1201";
+  const bool pulse_arch=architecture=="gfx1201"; // gfx1103 keeps pulse_arch=false: legacy submit path, no RDNA4 pulse scope
   const bool pulse_validated=SUCCEEDED(pulse_driver_status)&&static_cast<unsigned long long>(pulse_driver.QuadPart)==0x00200000791f0800ull;
   std::fprintf(stderr,"submit_pulse device_scope arch=%s runtime=%d driver_query=%08x driver=%016llx validated=%u\n",architecture.c_str(),runtime_version,unsigned(pulse_driver_status),static_cast<unsigned long long>(pulse_driver.QuadPart),unsigned(pulse_validated));
   network->pulse_bridge_diagnostics=timing_on||span_probe||poll||poll_inline;network->ConfigureSubmitPulse(pulse_arch,pulse_validated);
