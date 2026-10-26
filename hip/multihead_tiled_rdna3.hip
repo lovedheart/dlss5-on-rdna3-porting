@@ -59,12 +59,12 @@ using f8=float __attribute__((ext_vector_type(8)));
 #define TILE KERNEL __attribute__((amdgpu_flat_work_group_size(256,256)))
 DEV float fp8v(uint b){uint s=(b&0x80u)<<24,e=(b>>3)&0xfu,m=b&7u;if(e==15u&&m==7u)return value(0x7fc00000u);if(e==0u)return s?-float(m)*0.001953125f:float(m)*0.001953125f;return value(s|(uint(e+120)<<23)|(m<<20));}
 DEV uint q8(float x){uint b=bits(x),a=b&0x7fffffffu,s=(b>>28)&8u;
- if(a>=0x7f800000u)return s|0x7fu;
- if(a>=0x43e00000u)return s|0x7eu;
- if(a<0x3c800000u){float sc=absf(x)*512.f;uint q=uint(sc),r=bits(sc-float(q));q+=uint(r>0x3f000000u||(r==0x3f000000u&&(q&1u)));return s|(q>7u?8u:q);}
+ if(a>=0x7f800000u)return (s<<4)|0x7fu;
+ if(a>=0x43e00000u)return (s<<4)|0x7eu;
+ if(a<0x3c800000u){float sc=absf(x)*512.f;uint q=uint(sc),r=bits(sc-float(q));q+=uint(r>0x3f000000u||(r==0x3f000000u&&(q&1u)));return (s<<4)|(q>7u?8u:q);}
  int e=int(a>>23)-127;uint m=a&0x7fffffu,keep=m>>20,drop=m&0xfffffu;
  uint r=keep+uint(drop>0x80000u||(drop==0x80000u&&(keep&1u)));
- if(r>>3){r=0;e+=1;} if(e>8)return s|0x7eu; return s|(uint(e+7)<<3)|r;}
+ if(r>>3){r=0;e+=1;} if(e>8)return (s<<4)|0x7eu; return (s<<4)|(uint(e+7)<<3)|r;}
 DEV void pack(i2&v,uint e,float x){v[e/4]=int(uint(v[e/4])|(q8(x)<<(8*(e%4))));}
 //64x64 output tile,16 waves. Each thread stages one packed4-byte A row word
 // and one B column word; each packed operand is reused by four waves.

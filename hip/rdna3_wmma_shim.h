@@ -16,10 +16,10 @@ R3DEV uint bits(float x){union{float f;uint u;}t;t.f=x;return t.u;}
 R3DEV float val(uint u){union{float f;uint u;}t;t.u=u;return t.f;}
 R3DEV uint hb16(_Float16 h){union{_Float16 h;unsigned short s;}t{h};return t.s;}
 R3DEV uint sq8(float x){uint b=bits(x),a=b&0x7fffffffu,s=(b>>28)&8u;
- if(a>=0x7f800000u)return s|0x7fu; if(a>=0x43e00000u)return s|0x7eu;
- if(a<0x3c800000u){float sc=val(a)*512.f;uint q=uint(sc),r=bits(sc-float(q));q+=uint(r>0x3f000000u||(r==0x3f000000u&&(q&1u)));return s|(q>7u?8u:q);}
+ if(a>=0x7f800000u)return (s<<4)|0x7fu; if(a>=0x43e00000u)return (s<<4)|0x7eu;
+ if(a<0x3c800000u){float sc=val(a)*512.f;uint q=uint(sc),r=bits(sc-float(q));q+=uint(r>0x3f000000u||(r==0x3f000000u&&(q&1u)));return (s<<4)|(q>7u?8u:q);}
  int e=int(a>>23)-127;uint m=a&0x7fffffu,k=m>>20,d=m&0xfffffu;uint rr=k+uint(d>0x80000u||(d==0x80000u&&(k&1u)));
- if(rr>>3){rr=0u;e+=1;} if(e>8)return s|0x7eu; return s|(uint(e+7)<<3)|rr;}
+ if(rr>>3){rr=0u;e+=1;} if(e>8)return (s<<4)|0x7eu; return (s<<4)|(uint(e+7)<<3)|rr;}
 R3DEV uint sfp8v_bits(uint b){uint sv=(b&0x80u)<<24,e=(b>>3)&0xfu,m=b&7u;
  if(e==15u&&m==7u)return 0x7fc00000u;
  if(e==0u){union{float f;uint u;}z;z.f=float(m)*0.001953125f;return (z.u&0x7fffffffu)|sv;}

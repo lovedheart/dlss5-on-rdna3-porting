@@ -230,7 +230,9 @@ FASTWAVE void mh_attention_av_fast(const float* prob,const float* normalized,flo
 // C32: FP8 operands, a single K32 dot, explicit HLSL-half/RTZ epilogue.
 FASTWAVE void mh_pool_project_production(const float* pooled,const float* weights,float* output,uint width,uint height,uint valid_width,uint valid_height,uint channels){
  uint M=width*height,N=2*channels,tile=__builtin_amdgcn_workgroup_id_x(),nt=N/16;
- if(!valid_spatial(channels)||tile>=((M+15)/16)*nt)return;uint first=tile/nt*16,col=tile%nt*16,l=__builtin_amdgcn_workitem_id_x(),rc=l&15,g=l>>4;f8 acc{};
+ if(!valid_spatial(channels)||tile>=((M+15)/16)*nt)return;
+ if(channels==32)rdna3::ensure_fp8tab(32u); // emulated wmma_fp8 decode table
+ uint first=tile/nt*16,col=tile%nt*16,l=__builtin_amdgcn_workitem_id_x(),rc=l&15,g=l>>4;f8 acc{};
  for(uint chunk=0;chunk<channels/32;chunk++){f8 sum{};
   for(uint half=0;half<2;half++){
    if(channels==32){i2 a{},b{};for(uint e=0;e<8;e++){uint k=half*16+g*8+e,p=first+rc;pack(a,e,p<M?pooled[p*channels+k]:0.f);pack(b,e,weights[(col+rc)*channels+k]);}sum=rdna3::wmma_fp8(a,b,sum);}

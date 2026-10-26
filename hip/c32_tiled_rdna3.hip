@@ -32,10 +32,10 @@ DEV float F(float x){uint b=bits(x),a=b&0x7fffffffu,s=b&0x80000000u;if(a==0)retu
  uint r=(a+0x7ffffu+((a>>20)&1u))&0xfff00000u;return value(s|(r>0x43e00000u?0x43e00000u:r));}
 DEV float fp8v(uint b){uint s=(b&0x80u)<<24,e=(b>>3)&0xfu,m=b&7u;if(e==15u&&m==7u)return value(0x7fc00000u);if(e==0u)return s?-float(m)*0.001953125f:float(m)*0.001953125f;return value(s|(uint(e+120)<<23)|(m<<20));}
 DEV uint q8(float x){uint b=bits(x),a=b&0x7fffffffu,s=(b>>28)&8u;
- if(a>=0x7f800000u)return s|0x7fu; if(a>=0x43e00000u)return s|0x7eu;
- if(a<0x3c800000u){float sc=absf(x)*512.f;uint q=uint(sc),r=bits(sc-float(q));q+=uint(r>0x3f000000u||(r==0x3f000000u&&(q&1u)));return s|(q>7u?8u:q);}
+ if(a>=0x7f800000u)return (s<<4)|0x7fu; if(a>=0x43e00000u)return (s<<4)|0x7eu;
+ if(a<0x3c800000u){float sc=absf(x)*512.f;uint q=uint(sc),r=bits(sc-float(q));q+=uint(r>0x3f000000u||(r==0x3f000000u&&(q&1u)));return (s<<4)|(q>7u?8u:q);}
  int e=int(a>>23)-127;uint m=a&0x7fffffu,k=m>>20,d=m&0xfffffu;uint rr=k+uint(d>0x80000u||(d==0x80000u&&(k&1u)));
- if(rr>>3){rr=0u;e+=1;} if(e>8)return s|0x7eu; return s|(uint(e+7)<<3)|rr;}
+ if(rr>>3){rr=0u;e+=1;} if(e>8)return (s<<4)|0x7eu; return (s<<4)|(uint(e+7)<<3)|rr;}
 DEV uint pack4(const float*p){return q8(p[0])|(q8(p[1])<<8)|(q8(p[2])<<16)|(q8(p[3])<<24);}
 DEV float half_add_midpoint(float a,float b){float sum=a+b,vb=sum-a,error=(a-(sum-vb))+(b-vb);uint u=bits(sum),m=u&0x7fffffffu;
  if(m>=0x38800000u&&m<0x47800000u&&(m&0x1fffu)==0x1000u&&error!=0)sum=value(((error>0)==(sum>0))?u+1:u-1);return H(sum);}
