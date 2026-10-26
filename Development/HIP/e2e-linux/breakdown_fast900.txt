@@ -1,0 +1,56 @@
+Breakdown for fast900 (one warm frame, 780 launches, per-launch hipEvent timing, wall units corrected: harness prints microseconds as 'wall_ms')
+module :: kernel                                            ms/frame #/frame
+c32_fast_ffn :: c32_ffn_contract_fast_map3                     3.295       6
+c32_fast_ffn :: c32_ffn_contract_fast                          2.617       4
+mh_fast :: mh_qkv_normalize_fast                               1.299      52
+c32_fast_ffn :: c32_ffn_expand_fast                            0.388      10
+c32_fast_attention :: c32_fast_av                              0.306      10
+c32_fast_attention :: c32_fast_qkv                             0.305      10
+c32_fast_attention :: c32_fast_scores                          0.246      10
+mh_fast :: mh_attention_project_fast_matrix                    0.240      36
+mh_fast :: mh_scores_exp_fast                                  0.222      52
+mh_fast :: mh_qkv_fast                                         0.215      52
+deep_fast :: vit_project                                       0.211      16
+mh_fast :: mh_attention_av_fast                                0.210      52
+mh_fast :: mh_ffn_expand_fast                                  0.197      36
+mh_fast :: mh_ffn_contract_fast                                0.177      36
+deep_fast :: vit_expand                                        0.166       8
+c32_fast_attention :: c32_fast_project                         0.139      10
+deep_fast :: split_projection                                  0.097      16
+c32_fast_attention :: c32_fast_normalize                       0.092      10
+c32_fast_attention :: c32_fast_probabilities                   0.084      10
+mh_fast :: mh_ffn_project_fast                                 0.055      36
+mh_fast :: mh_probabilities_fast                               0.048      52
+mh :: mh_shift_crop                                            0.037      61
+deep_fast :: vit_qkv_project                                   0.036       8
+deep_fast :: vit_attention_scores_fast                         0.028       8
+deep_fast :: vit_attention_av_fast                             0.028       8
+mh_fast :: mh_attention_project_fast_scalar                    0.024      16
+deep_fast :: split_mix                                         0.023      16
+boundary_fast :: c32_finish_fast                               0.022       9
+mh :: mh_shift_pack                                            0.022      52
+boundary :: hip_c32_pack                                       0.019       9
+deep_fast :: split_contract                                    0.015      16
+deep_fast :: split_expand                                      0.015      16
+mh_fast :: mh_pool_project_production                          0.010       5
+deep_fast :: decoder_project2x                                 0.009       5
+prefix_fast :: dlss5_prefix_fast_project                       0.008       1
+boundary_fast :: hip_post_merge_fast                           0.006       1
+boundary_fast :: hip_post_head_fast                            0.004       1
+prefix_fast :: dlss5_prefix_fast_features                      0.003       1
+deep_fast :: vit_attention_inverse_fast                        0.003       8
+deep_fast :: vit_qkv_normalize                                 0.003       8
+boundary :: hip_input_reflect                                  0.001       1
+mh :: mh_pool                                                  0.001       4
+deep :: vit_gather                                             0.000       2
+frame total: 10.927 ms
+-- by module:
+   c32_fast_ffn              6.300
+   mh_fast                   2.697
+   c32_fast_attention        1.171
+   deep_fast                 0.634
+   mh                        0.060
+   boundary_fast             0.032
+   boundary                  0.020
+   prefix_fast               0.012
+   deep                      0.000
