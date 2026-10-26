@@ -93,7 +93,7 @@ $manifest = @()
 # gfx1103 (RDNA3 780M): no FP8 cvt or WMMA ISA. Build the four reference modules that
 # compile as-is, plus multihead-tiled from the register-blocked RDNA3 port; skip the rest
 # (RuntimeOptions has() gates disable their opt-in consumers on the host).
-$rdna3Modules=@{ 'c32_prefix_reference'=1; 'multihead-reference'=1; 'deep_reference'=1; 'boundary_reference'=1; 'multihead-tiled'=1; 'c32_tiled'=1; 'multihead-fast'=1; 'multihead-fast-packed'=1; 'prefix_fast'=1 }
+$rdna3Modules=@{ 'c32_prefix_reference'=1; 'multihead-reference'=1; 'deep_reference'=1; 'boundary_reference'=1; 'multihead-tiled'=1; 'c32_tiled'=1; 'multihead-fast'=1; 'multihead-fast-packed'=1; 'prefix_fast'=1; 'c32_fast'=1; 'c32_fast_attention'=1 }
 foreach ($m in $modules) {
     if ($Only -and $m.name -ne $Only) { continue }
     if ($target -eq 'gfx1103' -and -not $rdna3Modules.ContainsKey($m.name)) { Write-Output ("gfx1103 skip {0} (no RDNA3 port)" -f $m.name); continue }
@@ -103,7 +103,7 @@ foreach ($m in $modules) {
     $extraNames = @($ExtraDefines | ForEach-Object { ($_ -split '\s+')[0] })
     $recipe = @($m.defines | Where-Object { ($_ -split '\s+')[0] -notin $extraNames })
     foreach ($d in @($ExtraDefines)+$recipe) { $text += "#define $d`n" }
-    $parts = if ($target -eq 'gfx1103' -and $m.name -eq 'multihead-tiled') { @('multihead_tiled_rdna3.hip') } elseif ($target -eq 'gfx1103' -and $m.name -eq 'c32_tiled') { @('c32_tiled_rdna3.hip') } elseif ($target -eq 'gfx1103' -and ($m.name -eq 'multihead-fast' -or $m.name -eq 'multihead-fast-packed')) { @('rdna3_wmma_shim.h','multihead_fast_rdna3.hip')} elseif ($target -eq 'gfx1103' -and $m.name -eq 'prefix_fast') { @('rdna3_wmma_shim.h','prefix_fast_rdna3.hip') } else { $m.sources }
+    $parts = if ($target -eq 'gfx1103' -and $m.name -eq 'multihead-tiled') { @('multihead_tiled_rdna3.hip') } elseif ($target -eq 'gfx1103' -and $m.name -eq 'c32_tiled') { @('c32_tiled_rdna3.hip') } elseif ($target -eq 'gfx1103' -and ($m.name -eq 'multihead-fast' -or $m.name -eq 'multihead-fast-packed')) { @('rdna3_wmma_shim.h','multihead_fast_rdna3.hip')} elseif ($target -eq 'gfx1103' -and $m.name -eq 'prefix_fast') { @('rdna3_wmma_shim.h','prefix_fast_rdna3.hip')} elseif ($target -eq 'gfx1103' -and $m.name -eq 'c32_fast') { @('rdna3_wmma_shim.h','c32_fast_rdna3.hip') } elseif ($target -eq 'gfx1103' -and $m.name -eq 'c32_fast_attention') { @('rdna3_wmma_shim.h','c32_fast_attention_rdna3.hip') } else { $m.sources }
     foreach ($part in $parts) {
         if ($part -eq '@swin-persistent-types') {
             $types=Join-Path $SourceDir 'swin_persistent_types.h'
