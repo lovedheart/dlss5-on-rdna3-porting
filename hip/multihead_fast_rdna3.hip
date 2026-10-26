@@ -1,5 +1,7 @@
 // gfx1103 (RDNA3 780M) port of multihead_fast.hip: WMMA + FP8 cvt emulated via
-// rdna3_wmma_shim.h (must be concatenated before this file). Bit-exact vs gfx12 family.
+// rdna3_wmma_shim.h (must be concatenated before this file); the dense main loop
+// is a register-blocked rewrite (2x4/thread, decoded-float LDS staging) proven
+// bit-identical to the emulated-WMMA reference including the residual path.
 // gfx1103 PORT: emulated WMMA via rdna3_wmma_shim.h (correctness-grade path).
 #ifndef HIP_ISA_HALF
 #define HIP_ISA_HALF 1
@@ -72,6 +74,7 @@ DEV uint token_of_pixel(uint p,uint width){return ((p/width)%8)*8+(p%width)%8;}
 // gfx1103 port: WMMA builtins replaced by rdna3:: emulation (see shim).
 using i2=int __attribute__((ext_vector_type(2)));
 using f8=float __attribute__((ext_vector_type(8)));
+using f4=float __attribute__((ext_vector_type(4)));
 #define TILE KERNEL __attribute__((amdgpu_flat_work_group_size(512,512)))
 DEV uint q8(float x){return uint(rdna3::cvt_pk_fp8(x,x,0,false))&255u;}
 DEV void pack(i2&v,uint e,float x){v[e/4]=int(uint(v[e/4])|(q8(x)<<(8*(e%4))));}
@@ -81,22 +84,32 @@ DEV float Hrtz(float x){uint h;float out;asm("v_cvt_pkrtz_f16_f32 %0, %1, %1" : 
 //64x64 output tile,16 waves. Each thread stages one packed4-byte A row word
 // and one B column word; each packed operand is reused by four waves.
 DEV uint pack4(float a,float b,float c,float d){uint lo=uint(rdna3::cvt_pk_fp8(a,b,0,false));uint hi=uint(rdna3::cvt_pk_fp8(c,d,0,false));return (lo&65535u)|((hi&65535u)<<16);}
+DEV float fp8d(float x){return rdna3::sfp8v(rdna3::sq8(x));}
 DEV void fast_dense(const float* input,const float* feature,const float* weights,float* output,
  uint M,uint N,uint K,uint matrix_offset,uint skip_offset,uint epilogue,uint width=0,uint valid_width=0,uint valid_height=0,uint matrix_residual=0){
- __attribute__((shared)) uint sa[512];
- __attribute__((shared)) uint sb[512];
+ // Register-blocked RDNA3 main loop (1103b treatment). Staging holds the SAME
+ // fp8-quantised values decoded once to f32; each thread folds a 2x4 output
+ // tile. Products fold into the live accumulator in ascending k within each
+ // 16-K half and the two halves run in order, reproducing the two-WMMA-op
+ // fold ((...((c+p0)+p1)...+p15)+q0...+q31) bit-exactly.
+ __attribute__((shared)) float sm[4096];        // sa = [8 words][64 rows] float4, sb = [32 k][64 cols]
+ float* sa=sm; float* sb=sm+2048;
  uint block=__builtin_amdgcn_workgroup_id_x(),nt=(N+63)/64;
  if(!nt||block>=((M+63)/64)*nt)return;
- uint mr=block/nt*64,nc=block%nt*64,t=__builtin_amdgcn_workitem_id_x(),wave=t/32,l=t%32,rc=l&15,group=l>>4;
- uint wm=wave/4,wn=wave%4,first=mr+wm*16,col=nc+wn*16;
+ uint mr=block/nt*64,nc=block%nt*64,t=__builtin_amdgcn_workitem_id_x();
  rdna3::ensure_fp8tab(512u);
- f8 accum{};
-
-
+ uint tr=t/16,tc=t%16;
+ float c[2][4];
  #pragma unroll
- for(uint e=0;e<8;e++){uint p=first+group*8+e,n=col+rc;if(p<M&&n<N&&skip_offset!=~0u&&!matrix_residual)accum[e]=Hrtz(feature[p*N+n]*weights[skip_offset+n]);}
-
+ for(uint i=0;i<2;i++)
+  #pragma unroll
+  for(uint j=0;j<4;j++){uint p=mr+tr*2+i,n=nc+tc*4+j;c[i][j]=(p<M&&n<N&&skip_offset!=~0u&&!matrix_residual)?Hrtz(feature[p*N+n]*weights[skip_offset+n]):0.f;}
  if(matrix_residual){
+  // Exact fragment arithmetic of the WMMA residual path, then a bit-preserving
+  // LDS transfer into the register-tile accumulators.
+  uint wave=t/32,l=t%32,rc=l&15,group=l>>4,wm=wave/4,wn=wave%4;
+  uint first=mr+wm*16,col=nc+wn*16;
+  f8 accum{};
   uint n=col+rc;float remain=n<N?weights[skip_offset+n]:0.f;
   for(uint part=0;part<3;part++){
    float component;
@@ -110,6 +123,13 @@ DEV void fast_dense(const float* input,const float* feature,const float* weights
     accum=rdna3::wmma_fp8(a,b,accum);
    }
   }
+  #pragma unroll
+  for(uint e=0;e<8;e++)sm[(first+group*8+e-mr)*64+col+rc-nc]=accum[e];
+  rdna3::bar();
+  #pragma unroll
+  for(uint i=0;i<2;i++)
+   #pragma unroll
+   for(uint j=0;j<4;j++)c[i][j]=sm[(tr*2+i)*64+tc*4+j];
  }
  for(uint chunk=0;chunk<K/32;chunk++){
   uint row=t/8,word=t%8,k=chunk*32+word*4,p=mr+row,n=nc+row;
@@ -118,31 +138,34 @@ DEV void fast_dense(const float* input,const float* feature,const float* weights
   #ifndef HIP_PREPACKED_WEIGHTS
   if(n<N){uint off=matrix_offset+n*K+k;b0=weights[off];b1=weights[off+1];b2=weights[off+2];b3=weights[off+3];}
 #endif
-  sa[t]=pack4(a0,a1,a2,a3);
+  {f4 v={fp8d(a0),fp8d(a1),fp8d(a2),fp8d(a3)};*(f4*)(sa+(word*64+row)*4)=v;}
 #ifdef HIP_PREPACKED_WEIGHTS
   // Matrix bytes start at the original float-region offset; nonmatrix fields stay f32.
   const uint* packed_weights=reinterpret_cast<const uint*>(weights);
-  sb[t]=n<N?packed_weights[matrix_offset+(n*K+k)/4]:0u;
+  {uint w=n<N?packed_weights[matrix_offset+(n*K+k)/4]:0u;
+   #pragma unroll
+   for(uint j=0;j<4;j++)sb[(word*4+j)*64+row]=rdna3::sfp8v((w>>(8*j))&255u);}
 #else
-  sb[t]=pack4(b0,b1,b2,b3);
+  uint kw=(word*4)*64+row;sb[kw]=fp8d(b0);sb[kw+64]=fp8d(b1);sb[kw+128]=fp8d(b2);sb[kw+192]=fp8d(b3);
 #endif
   rdna3::bar();
- 
   #pragma unroll
   for(uint half=0;half<2;half++){
-   uint word0=half*4+group*2;
-   i2 a={int(sa[(wm*16+rc)*8+word0]),int(sa[(wm*16+rc)*8+word0+1])};
-   i2 b={int(sb[(wn*16+rc)*8+word0]),int(sb[(wn*16+rc)*8+word0+1])};
-   accum=rdna3::wmma_fp8(a,b,accum);
+   #pragma unroll
+   for(uint kk=0;kk<16;kk++){uint k2=half*16+kk,word2=k2>>2,j2=k2&3;
+    float ra0=sa[(word2*64+tr*2)*4+j2],ra1=sa[(word2*64+tr*2+1)*4+j2];
+    f4 rb=*(const f4*)(sb+k2*64+tc*4);
+    c[0][0]=c[0][0]+ra0*rb.x;c[0][1]=c[0][1]+ra0*rb.y;c[0][2]=c[0][2]+ra0*rb.z;c[0][3]=c[0][3]+ra0*rb.w;
+    c[1][0]=c[1][0]+ra1*rb.x;c[1][1]=c[1][1]+ra1*rb.y;c[1][2]=c[1][2]+ra1*rb.z;c[1][3]=c[1][3]+ra1*rb.w;
+   }
   }
- 
-  // All sixteen waves finish reading before any writer reuses this K32 tile.
+  // All threads finish reading before any writer reuses this K32 tile.
   rdna3::bar();
-  // Production fast path: keep accumulator live across every K16/K32.
  }
-
  #pragma unroll
- for(uint e=0;e<8;e++){uint p=first+group*8+e,n=col+rc;if(p>=M||n>=N)continue;float a=accum[e],v;
+ for(uint i=0;i<2;i++)
+  #pragma unroll
+  for(uint j=0;j<4;j++){uint p=mr+tr*2+i,n=nc+tc*4+j;if(p>=M||n>=N)continue;float a=c[i][j],v;
   if(epilogue==1){float gate=clampf(a,-4.f,4.f),q=__builtin_fmaf(absf(gate),-.055908203125f,.447265625f),poly=__builtin_fmaf(gate,q,.89453125f);v=F(a*poly);}
   else v=epilogue==2?a:epilogue==3?Hrtz(a):epilogue==4?F(a):epilogue==5?F(Hrtz(a)):F(H(a));
   output[p*N+n]=(valid_width&&(p%width>=valid_width||p/width>=valid_height))?0.f:v;
