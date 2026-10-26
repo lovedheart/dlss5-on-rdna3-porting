@@ -42,7 +42,16 @@ R3DEV float fp8val(uint b){union{uint u;float f;}t;t.u=fp8tab[b];return t.f;}
 R3DEV uint cvt_pk_fp8(float x,float y,uint acc,bool hi){
  uint w=sq8(x)|(sq8(y)<<8); return hi?(acc&0x0000ffffu)|(w<<16):(acc&0xffff0000u)|w;}
 R3DEV float cvt_f32_fp8(uint packed,uint word){return sfp8v((packed>>(8*word))&255u);}
+// The MAC folds below must stay two-op (mul then add): LLVM otherwise emits
+// v_fma_mix_f32 (f16-source FMA), whose single-rounding/denormal behavior
+// differs from the gfx12 WMMA accumulation being modeled.
+#pragma clang fp contract(off)
 R3DEV f8v wmma_fp8(i2v a,i2v b,f8v c){
+#ifdef DG_NOWMA
+ #pragma unroll
+ for(uint e=0;e<8;e++)c[e]+=float(uint(a.x^b.x));
+ return c;
+#else
  uint l=__builtin_amdgcn_workitem_id_x(),w=l>>5,ln=l&31,rc=ln&15,g=ln>>4;
  uint* A=slab8+w*128,*B=A+64;
  A[rc*4+g*2]=uint(a[0]); A[rc*4+g*2+1]=uint(a[1]);
@@ -72,6 +81,7 @@ R3DEV f8v wmma_fp8(i2v a,i2v b,f8v c){
   s=fp8val(av3>>24)*fp8val(bv3>>24)+s;
   r[e]=s;}
  return r;
+#endif
 }
 R3DEV f8v wmma_f16(h8v a,h8v b,f8v c){
  uint l=__builtin_amdgcn_workitem_id_x(),w=l>>5,ln=l&31,rc=ln&15,g=ln>>4;
